@@ -1,0 +1,80 @@
+syntax = "proto3";
+package gaztbl;
+
+import "google/protobuf/descriptor.proto";
+
+message Record {
+    // Assigned publisher UUID of the Record.
+    bytes uuid = 1;
+    // Effective journal offset of the Record.
+    // If this Record was produced as the result of a journal compaction,
+    // then effective_offset is the maximum offset of the compacted
+    // journal fragments. Otherwise, effective_offset is zero and its
+    // implied value is the literal offset at which this Record was read.
+    //
+    // Effective offsets are used to:
+    //   1) Determine whether a stream processor should ignore a Record
+    //      (because it started reading the journal before the Record's
+    //      effective_offset, and therefore has already seen all of its
+    //      constituents.
+    //   2) Determine the relative order in which Records should be merged.
+    int64 effective_offset = 2;
+}
+
+message MergeOptions {
+    bool lww = 1;
+    bool sum = 2;
+    bool max = 3;
+    bool min = 4;
+
+    message Append {
+        int32 limit = 1;
+        bool fifo = 2;
+        bool lifo = 3;
+    }
+    Append append = 5;
+
+    message HyperLogLog {
+        int32 p = 1;
+        string encoding = 2;
+    }
+    HyperLogLog hll = 6;
+
+    bool key = 7;
+    bool prune_order = 8;
+}
+
+message ParquetOptions {
+    bool bloom_filter = 1;
+    bool zorder = 2;
+}
+
+message TableOptions {
+    string name = 1;
+}
+
+message TableFieldOptions {
+    bool partitioned = 1;
+    bool group = 2;
+    MergeOptions merge = 3;
+    string filter_after = 4;
+
+    ParquetOptions parquet = 6;
+}
+
+extend google.protobuf.MessageOptions {
+    TableOptions table = 86753;
+}
+
+extend google.protobuf.FieldOptions {
+    TableFieldOptions field = 86753;
+}
+
+// usage:
+//message Bar {
+//    optional int32 a = 1 [(foo_options).opt1 = 123, (foo_options).opt2 = "baz"];
+//    // alternative aggregate syntax (uses TextFormat):
+//    optional int32 b = 2 [(foo_options) = { opt1: 123 opt2: "baz" }];
+//}
+
+

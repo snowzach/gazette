@@ -22,7 +22,8 @@ protobuf-targets = \
 	./broker/protocol/protocol.pb.go \
 	./consumer/protocol/protocol.pb.go \
 	./consumer/recoverylog/recorded_op.pb.go \
-	./examples/word-count/word_count.pb.go
+	./examples/word-count/word_count.pb.go \
+	./table/protocol/protocol.pb.go
 
 # consumer.proto depends on protocol.proto & recorded_op.proto.
 consumer/protocol/consumer.pb.go: broker/protocol/protocol.proto consumer/recoverylog/recorded_op.proto

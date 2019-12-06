@@ -125,5 +125,7 @@ func (svc *Service) Apply(ctx context.Context, req *pb.ApplyRequest) (resp *pb.A
 		err = s.KS.WaitForRevision(ctx, txnResp.Txn().Header.Revision)
 		s.KS.Mu.RUnlock()
 	}
+	resp.Header.Etcd.Revision = txnResp.Txn().Header.Revision
+
 	return resp, err
 }

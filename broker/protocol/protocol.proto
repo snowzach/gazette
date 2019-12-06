@@ -523,6 +523,8 @@ message ListRequest {
   // A pagination token returned by a previous call to List, that indicates
   // where this request should continue from. Optional.
   string page_token = 3;
+  // Minimum revision which must be read through before generating a response.
+  int64 min_revision = 4;
 }
 
 // ListResponse is the unary response message of the broker List RPC.

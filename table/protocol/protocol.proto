@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package table;
+
+import "broker/protocol/protocol.proto";
+import "google/protobuf/descriptor.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "go.gazette.dev/core/table/protocol";
+
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+
+message SchemaSpec {
+    string namespace = 1 [(gogoproto.casttype) = "Namespace"];
+    google.protobuf.FileDescriptorSet descriptors = 2;
+}
+
+message TableSpec {
+  option (gogoproto.protosizer) = true;
+  option (gogoproto.marshaler) = true;
+  option (gogoproto.unmarshaler) = true;
+
+  // Name of the table, including namespace components.
+  // Eg, "my/name/space/my-table-name".
+  string name = 1 [
+    (gogoproto.casttype) = "Table",
+    (gogoproto.moretags) = "yaml:\",omitempty\""];
+
+  // User-defined labels of this TableSpec. Two label names are reserved
+  // and may not be used within a TableSpec's Labels: "name" and "namespace".
+  protocol.LabelSet labels = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.embed) = true,
+    (gogoproto.moretags) = "yaml:\",omitempty,inline\""];
+
+  // Name of the DescriptorProto which defines this table's structure,
+  // in a Schema which either shares or parents this table's namespace.
+  string descriptor_name = 3;
+
+  // Maximum number of table partitions which will be automatically created.
+  // Beyond this limit, table rows not matching a current partition will be
+  // rejected. Additional partitions may still be created manually.
+  // If zero, all partitions must be manually created.
+  int32 max_partitions_to_auto_create = 4;
+}

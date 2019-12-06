@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package testtest;
+
+import "table/ddl.proto";
+import "gogoproto/gogo.proto";
+import "ptypes/duration/duration.proto";
+import "ptypes/empty/empty.proto";
+import "ptypes/timestamp/timestamp.proto";
+
+option go_package = "go.gazette.dev/core/table";
+
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.protosizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message AccessLog {
+    string client_ip = 2 [(gaztbl.field).parquet.bloom_filter = true];
+    string host = 3 [(gaztbl.field).partitioned = true];
+    string path = 4 [(gaztbl.field).parquet.zorder = true];
+    string query_string = 5;
+    string referer = 6 [(gaztbl.field).parquet.zorder = true];
+    string user_agent = 7;
+    int32 status = 8 [(gaztbl.field).partitioned = true];
+    int32 bytes_recv = 9;
+    int32 bytes_sent = 10;
+    int64 request_time_micros = 11;
+    string user_id = 12 [(gaztbl.field).parquet.bloom_filter = true];
+
+    gaztbl.Record record = 86753;
+};
+
+message CampaignFacts {
+    // Dimensions.
+    google.protobuf.Timestamp hour = 3 [
+        (relate.with) = {group: true, drop_after: "4320h"}];
+    string host = 1 [(relate.with).partition = true];
+    string path = 2 [(relate.with).group = true];
+    // Projected from AccessLog.query_string:
+    string utm_campaign = 4 [(relate.with).partition = true];
+    string utm_source = 5 [(relate.with).group = true];
+    string utm_medium = 6 [(relate.with).group = true];
+    string utm_term = 7 [(relate.with).group = true];
+    // Projected from AccessLog.user_agent:
+    string os = 8 [(relate.with).partition = true];
+
+    // Measures.
+    int64 page_views = 9 [(relate.with).merge.sum = true];
+    int64 acquisition_cost = 10 [(relate.with).merge.sum = true];
+    bytes approx_uniques = 11 [
+        (relate.with).merge.hll = {p: 123, encoding: "bigquery"}];
+
+    repeated string recent_referrers = 12 [
+        (relate.with).merge.append = {limit: 5, fifo: true}];
+    repeated string initial_referrers = 13 [
+       (estuary.relate).merge.append = {limit: 5, lifo: true}];
+
+    relate.Record record = 86753 [(gogoproto.nullable) = false];
+};
+
+message UserProfiles {
+    string host = 1 [(estuary.relate).partition = true];
+    string user_id = 2 [(estuary.relate).group = true];
+
+    google.protobuf.Timestamp last_seen = 3 [
+        (estuary.relate).merge.max = true,
+        (estuary.relate).filter_after = "4320h"];
+
+    message PageViews {
+        string path = 1 [(estuary.relate).group = true];
+
+        google.protobuf.Timestamp first_view = 2 [
+            (estuary.relate).merge.min = true ];
+        google.protobuf.Timestamp last_view = 3 [
+            (estuary.relate).merge = {max: true, prune_order: true} ];
+
+        int32 count = 4 [(estuary.relate).merge.sum = true];
+    };
+    repeated PageViews views = 4 [
+        (estuary.relate).merge.append = {limit: 10, lifo: true}];
+
+};
