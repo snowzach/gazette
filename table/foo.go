@@ -1,33 +1,24 @@
 package table
 
 import (
-	"bufio"
+	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"sort"
-	"strconv"
 	"strings"
 
+	ptypes "github.com/gogo/protobuf/types"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/message"
 	pt "go.gazette.dev/core/table/protocol"
 )
 
-// Path hierarchy.
-// Cluster <- This is a tenant / seat / account. Users are namespaced at the cluster level.
-// Database <- Maps to bigger units within the org (ie platoons). Some common definitions can live here? Also a unit of permission.
-// Schema <- 1:1 with larger applications / service; one team could own many schemas. Common definitions also live here, as do permissions.
-// Make this dynamic? why force a fixed hierarchy... allow arbitrary nesting!
+// Ways of writing to tables:
+// * stdout / stream => gazctl
+//   - AppendService -like batching of rows
+//   - Bad rows abort stream OR written to dead row queue.
 
-const (
-	schemasPrefix = "/schemas/"
-	tablesPrefix  = "/tables/"
-)
-
-type Table struct {
-	Spec   pt.TableSpec
-	NewRow func() Row
-}
 
 type PartitionField struct {
 	Field, Value string
@@ -42,7 +33,48 @@ type FieldWriter interface {
 type Row interface {
 	message.Message
 
+	Validate() error
 	WritePartitionFields(FieldWriter) error
+}
+
+type foo struct {
+
+	pub *message.Publisher
+}
+
+func (foo) Transaction(ctx context.Context, req *pt.InsertRequest) (*pt.InsertResponse, error) {
+	var err error
+	var da ptypes.DynamicAny
+
+	for i := range req.Rows {
+		// Do we need to allocate a message of a different type?
+		// (If not, re-use a previous allocated instance).
+		if i == 0 || req.Rows[i].TypeUrl != req.Rows[i-1].TypeUrl {
+			if da.Message, err = ptypes.EmptyAny(&req.Rows[i]); err != nil {
+				return nil, err
+			}
+		}
+		if err = ptypes.UnmarshalAny(&req.Rows[i], &da); err != nil {
+				return nil, err
+		}
+
+		// Validate the row.
+		var row, ok = da.Message.(Row)
+		if !ok {
+			return nil, fmt.Errorf("message %#v does not implement Row", da)
+		} else if err = row.Validate(); err != nil {
+			return nil, fmt.Errorf("validating row %d: %w", i, err)
+		}
+
+		// Map row to a journal prefix.
+		// Map journal prefix to a partition.
+		// - (Always select the same partition for a given prefix)
+		// Create new partition if requested, and prefix doesn't exist.
+
+		// Publish row as uncommitted message to its partition.
+	}
+
+
 }
 
 func insertRow(tbl *Table, r Row, partsFn message.PartitionsFunc) error {

@@ -1,9 +1,17 @@
 syntax = "proto3";
-package gaztbl;
+
+package gazette.table;
 
 import "google/protobuf/descriptor.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "go.gazette.dev/core/table/ddl";
 
 message Record {
+    option (gogoproto.protosizer) = true;
+    option (gogoproto.marshaler) = true;
+    option (gogoproto.unmarshaler) = true;
+
     // Assigned publisher UUID of the Record.
     bytes uuid = 1;
     // Effective journal offset of the Record.

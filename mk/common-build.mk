@@ -87,7 +87,15 @@ ${WORKDIR}/rocksdb-v%/librocksdb.so:
 %.pb.go: %.proto ${WORKDIR}/protoc-gen-gogo
 	PATH=${WORKDIR}:$${PATH} ;\
 	protoc -I . $(foreach module, $(PROTOC_INC_MODULES), -I$(module_path)) \
-	--gogo_out=paths=source_relative,plugins=grpc:. $*.proto
+	--gogo_out=\
+	paths=source_relative,\
+	plugins=grpc,\
+	Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,\
+	Mgoogle/protobuf/duration.proto=github.com/gogo/protobuf/types,\
+	Mgoogle/protobuf/struct.proto=github.com/gogo/protobuf/types,\
+	Mgoogle/protobuf/timestamp.proto=github.com/gogo/protobuf/types,\
+	Mgoogle/protobuf/wrappers.proto=github.com/gogo/protobuf/types:. \
+	$*.proto
 
 # Rule to build protoc-gen-gogo.
 ${WORKDIR}/protoc-gen-gogo:
