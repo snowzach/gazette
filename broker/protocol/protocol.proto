@@ -39,8 +39,8 @@ enum Status {
   WRONG_ROUTE = 7;
   // The peer disagrees with the proposal accompanying a ReplicateRequest.
   PROPOSAL_MISMATCH = 8;
-  // The Etcd transaction failed. Returned by Update RPC when an
-  // expect_mod_revision of the UpdateRequest differs from the current
+  // The Etcd transaction failed. Returned by Apply RPC when an
+  // expect_mod_revision of the ApplyRequest differs from the current
   // ModRevision of the JournalSpec within the store.
   ETCD_TRANSACTION_FAILED = 9;
   // A disallowed journal access was attempted (eg, a write where the

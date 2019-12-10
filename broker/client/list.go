@@ -200,6 +200,8 @@ func ApplyJournalsInBatches(ctx context.Context, jc pb.JournalClient, req *pb.Ap
 			return resp, err
 		} else if err = resp.Validate(); err != nil {
 			return resp, err
+		} else if resp.Status == pb.Status_ETCD_TRANSACTION_FAILED {
+			return resp, ErrEtcdTransactionFailed
 		} else if resp.Status != pb.Status_OK {
 			return resp, errors.New(resp.Status.String())
 		}

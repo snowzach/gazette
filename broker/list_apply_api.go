@@ -117,13 +117,10 @@ func (svc *Service) Apply(ctx context.Context, req *pb.ApplyRequest) (resp *pb.A
 	var txnResp clientv3.OpResponse
 	if txnResp, err = svc.etcd.Do(ctx, clientv3.OpTxn(cmp, ops, nil)); err != nil {
 		return resp, err
-	} else if !txnResp.Txn().Succeeded {
+	}
+
+	if !txnResp.Txn().Succeeded {
 		resp.Status = pb.Status_ETCD_TRANSACTION_FAILED
-	} else {
-		// Delay responding until we have read our own Etcd write.
-		s.KS.Mu.RLock()
-		err = s.KS.WaitForRevision(ctx, txnResp.Txn().Header.Revision)
-		s.KS.Mu.RUnlock()
 	}
 	resp.Header.Etcd.Revision = txnResp.Txn().Header.Revision
 

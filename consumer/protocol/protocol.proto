@@ -29,8 +29,8 @@ enum Status {
   // The present consumer process is not the assigned primary for the shard,
   // and was not instructed to proxy the request.
   NOT_SHARD_PRIMARY = 3;
-  // The Etcd transaction failed. Returned by Update RPC when an
-  // expect_mod_revision of the UpdateRequest differs from the current
+  // The Etcd transaction failed. Returned by Apply RPC when an
+  // expect_mod_revision of the ApplyRequest differs from the current
   // ModRevision of the ShardSpec within the store.
   ETCD_TRANSACTION_FAILED = 4;
 }

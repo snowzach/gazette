@@ -21,20 +21,11 @@ import (
 //   - AppendService -like batching of rows
 //   - Bad rows abort stream OR written to dead row queue.
 
-type PartitionField struct {
-	Field, Value string
-}
-
-type FieldWriter interface {
-	io.Writer
-	io.StringWriter
-	io.ByteWriter
-}
-
 type TableSpec struct {
 	Namespace             string
 	Name                  string
 	MaxPartitionsToCreate int
+	JournalSpecModel      *pb.JournalSpec
 }
 
 type Row interface {
@@ -42,9 +33,8 @@ type Row interface {
 	proto.Message
 
 	TableSpec() *TableSpec
-
 	Validate() error
-	WritePartitionFields(FieldWriter) error
+	VisitPartitionFields(func(field, value string))
 }
 
 type rowMapper struct {
@@ -60,8 +50,9 @@ func (m *rowMapper) Map(mappable message.Mappable) (_ pb.Journal, contentType st
 	var row = mappable.(Row)
 	var tbl = row.TableSpec()
 
-	// Extract table name component.
-	var b bytes.Buffer
+	// Build the namespaced table prefix.
+	// Eg, "a/namespace/AndTable".
+	var b = new(bytes.Buffer)
 	b.WriteString(tbl.Namespace)
 	b.WriteByte('/')
 	b.WriteString(tbl.Name)
@@ -74,70 +65,73 @@ func (m *rowMapper) Map(mappable message.Mappable) (_ pb.Journal, contentType st
 			Selector: pb.LabelSelector{Include: pb.MustLabelSet("prefix", b.String()+"/")},
 		})
 		m.lists[string(b.Bytes())] = list
-
-		// Defer initial load until we're out of this critical section.
 	}
 	m.mu.Unlock()
 
-	// Extend table name with partitions.
-	if err := row.WritePartitionFields(&b); err != nil {
-		return "", "", err
-	}
+	// Extend table name with partitioned fields to obtain the full journal prefix.
+	// Eg, "a/namespace/AndTable/foo=bar/baz=bing".
+	row.VisitPartitionFields(func(field, value string) {
+		b.WriteByte('/')
+		b.WriteString(field)
+		b.WriteByte('=')
+		b.WriteString(value)
+	})
 
+	// Find partitions matching the prefix. If none exists, we may create one.
 	var readThroughRevision int64 = 1
 	var parts = list.List()
+	var begin, end = prefixedRange(b.String(), parts.Journals)
 
-	for {
+	for begin == end {
+		// Do we need to refresh our cached partition list?
 		if parts.Header.Etcd.Revision < readThroughRevision {
-			if err := list.Refresh(1); err != nil {
-				return "", "",
-					fmt.Errorf("refresh of table %s partitions: %w", b.String(), err)
+			if err := list.Refresh(readThroughRevision); err != nil {
+				err = fmt.Errorf("refresh of %s partitions @%d: %w",
+					b.String(), readThroughRevision, err)
+				return "", "", err
 			}
 			parts = list.List()
 			continue
 		}
 
-		// Find a matched partition.
-		var begin, end = prefixedRange(b.String(), parts.Journals)
-
-		if begin == end && len(parts.Journals) >= tbl.MaxPartitionsToCreate {
-			return "", "", MissingPartition{
-				Prefix: b.String(),
-			}
+		if len(parts.Journals) >= tbl.MaxPartitionsToCreate {
+			return "", "", MissingPartition{Prefix: b.String()}
 		}
 
+		// We must create a new partition.
+		var labels pb.LabelSet
+		// TODO: name label? Namespace?
+
+		row.VisitPartitionFields(func(field, value string) {
+			labels.AddValue("table.gazette.dev/field/"+field, value)
+		})
+
+		var spec = pb.UnionJournalSpecs(*tbl.JournalSpecModel, pb.JournalSpec{
+			Name:     pb.Journal(b.String() + "/part=000"),
+			LabelSet: labels,
+		})
+
+		resp, err := client.ApplyJournals(m.ctx, m.client, &pb.ApplyRequest{
+			Changes: []pb.ApplyRequest_Change{
+				{
+					ExpectModRevision: 0,
+					Upsert:            &spec,
+				},
+			}})
+
+		switch err {
+		case nil, client.ErrEtcdTransactionFailed:
+			readThroughRevision = resp.Header.Etcd.Revision
+		default:
+			err = fmt.Errorf("creating table partition %s: %w", spec.Name, err)
+			return "", "", err
+		}
 	}
 
-	// Do we need to perform an initial load?
-
-	// Map journal prefix to a partition.
-	// - (Always select the same partition for a given prefix)
-	// Create new partition if requested, and prefix doesn't exist.
+	// Select a partition among [begin, end).
 
 	// Publish row as uncommitted message to its partition.
 
-	// Build the fully-qualified table name.
-	/*
-		b.WriteString(tbl.Spec.Name.String())
-		b.WriteByte('/')
-
-		if err := r.WritePartitionFields(&b); err != nil {
-			return fmt.Errorf("WritePartitionFields: %w", err)
-		}
-
-		// Find the set of partitions prefixed by |b|.
-		var parts = partsFn()
-		var begin, end = prefixedRange(b.String(), parts.Journals)
-
-		if begin == end && len(parts.Journals) >= int(tbl.Spec.MaxPartitionsToAutoCreate) {
-			return MissingPartition{
-				Prefix: b.String(),
-			}
-		}
-
-		// Task: we must identify a journal to which Row is directed.
-		// - Ground out all partitioned fields, on tag order.
-	*/
 }
 
 func Insert(ctx context.Context, row Row, mapping message.MappingFunc, pub *message.Publisher) error {

@@ -283,6 +283,8 @@ func ApplyShardsInBatches(ctx context.Context, sc pc.ShardClient, req *pc.ApplyR
 			return resp, err
 		} else if err = resp.Validate(); err != nil {
 			return resp, err
+		} else if resp.Status == pc.Status_ETCD_TRANSACTION_FAILED {
+			return resp, ErrEtcdTransactionFailed
 		} else if resp.Status != pc.Status_OK {
 			return resp, errors.New(resp.Status.String())
 		}
@@ -305,3 +307,6 @@ func FetchHints(ctx context.Context, sc pc.ShardClient, req *pc.GetHintsRequest)
 		return r, nil
 	}
 }
+
+// ErrEtcdTransactionFailed maps the Apply RPC status into a common error instance.
+var ErrEtcdTransactionFailed = errors.New(pc.Status_ETCD_TRANSACTION_FAILED.String())

@@ -352,6 +352,7 @@ func mapGRPCCtxErr(ctx context.Context, err error) error {
 
 var (
 	// Map common broker error statuses into named errors.
+	ErrEtcdTransactionFailed   = errors.New(pb.Status_ETCD_TRANSACTION_FAILED.String())
 	ErrNotJournalBroker        = errors.New(pb.Status_NOT_JOURNAL_BROKER.String())
 	ErrNotJournalPrimaryBroker = errors.New(pb.Status_NOT_JOURNAL_PRIMARY_BROKER.String())
 	ErrOffsetNotYetAvailable   = errors.New(pb.Status_OFFSET_NOT_YET_AVAILABLE.String())
