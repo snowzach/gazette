@@ -499,15 +499,14 @@ func pumpSums(rr *client.RetryReader, ch chan<- Sum) {
 
 // newChunkMapping returns a MappingFunc over journals holding chunks.
 func newChunkMapping(ctx context.Context, jc pb.JournalClient) (message.MappingFunc, error) {
-	var parts, err = client.NewPolledList(ctx, jc, time.Second*30, pb.ListRequest{
+	var parts = client.NewPolledList(ctx, jc, time.Second*30, pb.ListRequest{
 		Selector: pb.LabelSelector{
 			Include: pb.MustLabelSet(labels.MessageType, "stream_sum.Chunk"),
 		}})
 
-	if err != nil {
+	if err := parts.Refresh(0); err != nil {
 		return nil, err
 	}
-
 	for len(parts.List().Journals) == 0 {
 		log.Info("waiting for chunk partition journals to be created")
 		<-parts.UpdateCh()

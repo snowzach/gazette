@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	gc "github.com/go-check/check"
@@ -111,43 +112,102 @@ func (s *ListSuite) TestGetJournal(c *gc.C) {
 	c.Check(spec, gc.IsNil)
 }
 
-func (s *ListSuite) TestPolledList(c *gc.C) {
+func (s *ListSuite) TestPolledListPeriodicRefresh(c *gc.C) {
 	var broker = teststub.NewBroker(c)
 	defer broker.Cleanup()
-
-	var mk = buildListResponseFixture // Alias.
-
-	var fixture = pb.ListResponse{
-		Header:   *buildHeaderFixture(broker),
-		Journals: mk("part-one", "part-two"),
-	}
-
-	var callCh = make(chan struct{}, 1)
-	defer close(callCh)
-
-	broker.ListFunc = func(_ context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
-		<-callCh
-		return &fixture, nil
-	}
-
-	// Expect NewPolledList calls ListAllJournals once, and List is prepared before return.
-	callCh <- struct{}{}
 
 	var ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 
-	var pl, err = NewPolledList(ctx, broker.Client(), 5*time.Millisecond, pb.ListRequest{})
-	c.Check(err, gc.IsNil)
+	// Establish a List RPC fixture, which isn't called yet.
+	var rpcCh = make(chan struct{}, 1)
+	defer close(rpcCh)
+
+	var fixture = pb.ListResponse{
+		Header:   *buildHeaderFixture(broker),
+		Journals: buildListResponseFixture("part-one", "part-two"),
+	}
+	broker.ListFunc = func(_ context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
+		c.Check(req.MinRevision, gc.Equals, int64(0))
+		<-rpcCh
+		return &fixture, nil
+	}
+
+	// At initialization, expect that an empty List is returned.
+	var pl = NewPolledList(ctx, broker.Client(), 5*time.Millisecond, pb.ListRequest{})
+	c.Check(pl.List(), gc.DeepEquals, new(pb.ListResponse))
+
+	// Unblock RPC, and wait for PolledList's periodic refresh timer to elapse.
+	var ch = pl.UpdateCh()
+	rpcCh <- struct{}{}
+	<-ch
 	c.Check(pl.List(), gc.DeepEquals, &fixture)
-	<-pl.UpdateCh() // Expect UpdateCh is initially ready to select.
 
 	// Alter the fixture. List will eventually reflect it, after being given a chance to refresh.
-	fixture.Journals = mk("part-one", "part-two", "part-three")
+	fixture.Journals = buildListResponseFixture("part-one", "part-two", "part-three")
 	c.Check(pl.List(), gc.Not(gc.DeepEquals), &fixture)
 
 	// Expect another poll is done, and the PolledList updates.
-	callCh <- struct{}{}
-	<-pl.UpdateCh()
+	ch = pl.UpdateCh()
+	rpcCh <- struct{}{}
+	<-ch
+	c.Check(pl.List(), gc.DeepEquals, &fixture)
+}
+
+func (s *ListSuite) TestPolledListRefreshAtRevision(c *gc.C) {
+	var broker = teststub.NewBroker(c)
+	defer broker.Cleanup()
+
+	var ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+
+	var rpcCh = make(chan struct{}, 1)
+	defer close(rpcCh)
+
+	// First List RPC fixture returns a current revision of 1000.
+	var fixture = pb.ListResponse{
+		Header:   *buildHeaderFixture(broker),
+		Journals: buildListResponseFixture("part-one"),
+	}
+	fixture.Header.Etcd.Revision = 1000
+
+	broker.ListFunc = func(_ context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
+		c.Check(req.MinRevision, gc.Equals, int64(0))
+		<-rpcCh
+		return &fixture, nil
+	}
+
+	// Build a NewPolledList and perform a first refresh.
+	var pl = NewPolledList(ctx, broker.Client(), 10*time.Hour, pb.ListRequest{})
+	rpcCh <- struct{}{}
+	c.Check(pl.Refresh(0), gc.IsNil)
+	c.Check(pl.List(), gc.DeepEquals, &fixture)
+
+	// Expect an additional Refresh at revision < fixture revision completes immediately.
+	c.Check(pl.Refresh(999), gc.IsNil)
+
+	// Second List RPC fixture includes a new journal, expects to be called at
+	// future revision 1001, and returns revision 2000.
+	fixture.Journals = buildListResponseFixture("part-one", "part-two")
+	fixture.Header.Etcd.Revision = 2000
+
+	broker.ListFunc = func(_ context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
+		c.Check(req.MinRevision, gc.Equals, int64(1001))
+		<-rpcCh
+		return &fixture, nil
+	}
+	rpcCh <- struct{}{} // Expect that List is called just once.
+
+	// Start many concurrent calls to Refresh at revision 1001.
+	var wg sync.WaitGroup
+	for i := 0; i != 10; i++ {
+		wg.Add(1)
+		go func() {
+			c.Check(pl.Refresh(1001), gc.IsNil)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
 
 	c.Check(pl.List(), gc.DeepEquals, &fixture)
 }

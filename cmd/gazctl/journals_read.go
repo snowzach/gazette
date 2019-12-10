@@ -151,8 +151,8 @@ func (cmd *cmdJournalRead) Execute([]string) error {
 	// Perform an initial load and thereafter periodically poll for journals
 	// matching the --selector.
 	var rjc = journalsCfg.Broker.MustRoutedJournalClient(ctx)
-	list, err := client.NewPolledList(ctx, rjc, time.Minute, listRequest)
-	mbp.Must(err, "failed to resolve label selector to journals")
+	var list = client.NewPolledList(ctx, rjc, time.Minute, listRequest)
+	mbp.Must(list.Refresh(0), "failed to resolve label selector to journals")
 
 	if len(list.List().Journals) == 0 {
 		log.Warn("no journals were matched by the selector")

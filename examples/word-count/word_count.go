@@ -65,11 +65,11 @@ func (counter *Counter) InitApplication(args runconsumer.InitArgs) error {
 	}
 
 	// Build a "deltas" MappingFunc over "app.gazette.dev/message-type=NGramCount" partitions.
-	var parts, err = client.NewPolledList(args.Context, args.Service.Journals, time.Second*30,
+	var parts = client.NewPolledList(args.Context, args.Service.Journals, time.Second*30,
 		pb.ListRequest{
 			Selector: pb.LabelSelector{Include: pb.MustLabelSet(labels.MessageType, "word_count.NGramCount")},
 		})
-	if err != nil {
+	if err := parts.Refresh(0); err != nil {
 		return errors.Wrap(err, "building NGramDeltaMapping")
 	}
 

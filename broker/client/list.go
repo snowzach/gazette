@@ -22,59 +22,90 @@ import (
 //      })
 //
 type PolledList struct {
-	ctx      context.Context
-	client   pb.JournalClient
-	req      pb.ListRequest
-	resp     atomic.Value
-	updateCh chan struct{}
+	ctx       context.Context
+	client    pb.JournalClient
+	req       pb.ListRequest
+	resp      atomic.Value  // Holds *pb.ListResponse.
+	updateCh  atomic.Value  // Holds chan struct{}.
+	refreshCh chan struct{} // Semaphore over calls to Refresh.
 }
 
 // NewPolledList returns a PolledList of the ListRequest which is initialized and
 // ready for immediate use, and which will regularly refresh with the given Duration.
 // An error encountered in the first List RPC is returned. Subsequent RPC errors
 // will be logged as warnings and retried as part of regular refreshes.
-func NewPolledList(ctx context.Context, client pb.JournalClient, dur time.Duration, req pb.ListRequest) (*PolledList, error) {
-	var resp, err = ListAllJournals(ctx, client, req)
-	if err != nil {
-		return nil, err
-	}
+func NewPolledList(ctx context.Context, client pb.JournalClient, dur time.Duration, req pb.ListRequest) *PolledList {
 	var pl = &PolledList{
-		ctx:      ctx,
-		client:   client,
-		req:      req,
-		updateCh: make(chan struct{}, 1),
+		ctx:       ctx,
+		client:    client,
+		req:       req,
+		refreshCh: make(chan struct{}, 1),
 	}
-	pl.resp.Store(resp)
-	pl.updateCh <- struct{}{}
+	pl.resp.Store(new(pb.ListResponse))
+	pl.updateCh.Store(make(chan struct{}))
+	pl.refreshCh <- struct{}{}
 
 	go pl.periodicRefresh(dur)
-	return pl, nil
+	return pl
 }
 
 // List returns the most recent polled & merged ListResponse (see ListAllJournals).
+// If a Refresh of this PolledList has yet to complete, a non-nil but zero valued
+// ListResponse is returned.
 func (pl *PolledList) List() *pb.ListResponse { return pl.resp.Load().(*pb.ListResponse) }
 
-// UpdateCh returns a channel which is signaled with each update of the
-// PolledList. Only one channel is allocated and one signal sent per-update,
-// so if multiple goroutines select from UpdateCh only one will wake.
-func (pl *PolledList) UpdateCh() <-chan struct{} { return pl.updateCh }
+// UpdateCh returns a channel which will be closed on the next refresh of the
+// PolledList.
+func (pl *PolledList) UpdateCh() <-chan struct{} { return pl.updateCh.Load().(chan struct{}) }
+
+// Refresh the PolledList. Only one call to Refresh will proceed at a time, and
+// others will block. If the given revision is non-zero, it's attached to the
+// List RPC as the minimum revision which must be read through before replying.
+// If the cached response is current as-of the revision, Refresh returns immediately
+// without invoking the List RPC. A revision of zero always invokes an RPC.
+//
+// The combination of these behaviors let PolledList safely handle a
+// "thundering herd" of refreshes: if many clients concurrently request a
+// Refresh at future revision R, only one will proceed and others will block.
+// The proceeding Refresh will cache a response at revision N >= R on completion.
+// Other calls will then unblock, observe revision N, and return immediately.
+func (pl *PolledList) Refresh(revision int64) error {
+	<-pl.refreshCh
+	defer func() {
+		pl.refreshCh <- struct{}{}
+	}()
+
+	if revision != 0 && pl.List().Header.Etcd.Revision >= revision {
+		return nil // List is already current.
+	}
+
+	var req = pl.req
+	if revision > req.MinRevision {
+		req.MinRevision = revision
+	}
+
+	var resp, err = ListAllJournals(pl.ctx, pl.client, req)
+	if err != nil {
+		return err
+	}
+	pl.resp.Store(resp)
+
+	// Signal that List has been updated.
+	var ch = pl.updateCh.Load().(chan struct{})
+	pl.updateCh.Store(make(chan struct{}))
+	close(ch)
+
+	return nil
+}
 
 func (pl *PolledList) periodicRefresh(dur time.Duration) {
 	var ticker = time.NewTicker(dur)
 	for {
 		select {
 		case <-ticker.C:
-			var resp, err = ListAllJournals(pl.ctx, pl.client, pl.req)
-			if err != nil {
+			if err := pl.Refresh(0); err != nil {
 				log.WithFields(log.Fields{"err": err, "req": pl.req.String()}).
-					Warn("periodic List refresh failed (will retry)")
-			} else {
-				pl.resp.Store(resp)
-
-				select {
-				case pl.updateCh <- struct{}{}:
-				default: // Don't block if nobody's reading.
-				}
+					Warn("periodic PolledList refresh failed (will retry)")
 			}
 		case <-pl.ctx.Done():
 			ticker.Stop()

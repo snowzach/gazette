@@ -207,12 +207,12 @@ func (Application) FinalizeTxn(consumer.Shard, consumer.Store, *message.Publishe
 // given message type, and returns a mapping to journals using modulo arithmetic
 // over the provided MappingKeyFunc.
 func buildMapping(msgType string, fn message.MappingKeyFunc, args runconsumer.InitArgs) message.MappingFunc {
-	var parts, err = client.NewPolledList(args.Context, args.Service.Journals, time.Second*30,
+	var parts = client.NewPolledList(args.Context, args.Service.Journals, time.Second*30,
 		pb.ListRequest{
 			Selector: pb.LabelSelector{
 				Include: pb.MustLabelSet(labels.MessageType, msgType),
 			}})
-	mbp.Must(err, "failed to fetch partitions")
+	mbp.Must(parts.Refresh(0), "failed to fetch partitions")
 
 	for len(parts.List().Journals) == 0 {
 		log.WithField("msg", msgType).Info("waiting for partitions to be created")
