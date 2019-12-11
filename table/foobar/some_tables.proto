@@ -12,6 +12,7 @@ option (gogoproto.protosizer_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 message AccessLog {
+
     string client_ip = 2 [(gazette.table.field).parquet.bloom_filter = true];
     string host = 3 [(gazette.table.field).partitioned = true];
     string path = 4 [(gazette.table.field).parquet.zorder = true];
@@ -25,6 +26,25 @@ message AccessLog {
     string user_id = 12 [(gazette.table.field).parquet.bloom_filter = true];
 
     gazette.table.Record record = 86753;
+
+    option (gazette.table.spec) = {
+        template: {
+            replication: 1,
+            labels: {
+                labels: {name: "a-name", value: "a-value"},
+                labels: {name: "other-name", value: "other-value"},
+            },
+            fragment: {
+                length: 12345,
+                compression_codec: GZIP,
+                stores: ["s3://my-bucket/and-path/"],
+                refresh_interval: {seconds: 300},
+                path_postfix_template: "date={{ .Spool.FirstAppendTime.Format \"2006-01-02\" }}",
+            }
+            max_append_rate: 2345,
+        }
+        partition_limit: 50,
+    };
 };
 
 /*

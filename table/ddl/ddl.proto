@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package gazette.table;
 
+import "broker/protocol/protocol.proto";
 import "google/protobuf/descriptor.proto";
 import "gogoproto/gogo.proto";
 
@@ -57,11 +58,16 @@ message ParquetOptions {
     bool zorder = 2;
 }
 
-message TableOptions {
-    string name = 1;
+message TableSpec {
+    string namespace = 1;
+    string name = 2;
+    protocol.JournalSpec template = 3;
+    int32 partition_limit = 4;
 }
 
-message TableFieldOptions {
+message TableFieldSpec {
+    string name = 8;
+
     bool partitioned = 1;
     bool group = 2;
     MergeOptions merge = 3;
@@ -71,11 +77,11 @@ message TableFieldOptions {
 }
 
 extend google.protobuf.MessageOptions {
-    TableOptions table = 86753;
+    TableSpec spec = 86753;
 }
 
 extend google.protobuf.FieldOptions {
-    TableFieldOptions field = 86753;
+    TableFieldSpec field = 86753;
 }
 
 // usage:
