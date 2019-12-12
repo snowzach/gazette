@@ -17,8 +17,8 @@ message Record {
     bytes uuid = 1;
     // Effective journal offset of the Record.
     // If this Record was produced as the result of a journal compaction,
-    // then effective_offset is the maximum offset of the compacted
-    // journal fragments. Otherwise, effective_offset is zero and its
+    // then begin_offset is the maximum offset of the compacted journal
+    // fragments. Otherwise, begin_offset is zero and its
     // implied value is the literal offset at which this Record was read.
     //
     // Effective offsets are used to:
@@ -27,7 +27,11 @@ message Record {
     //      effective_offset, and therefore has already seen all of its
     //      constituents.
     //   2) Determine the relative order in which Records should be merged.
-    int64 effective_offset = 2;
+    int64 effective_begin_offset = 2;
+
+    // Effective journal end offset of the Record.
+    // If produced as part of a journal compaction, th
+    int64 effective_end_offset = 3;
 }
 
 message MergeOptions {
@@ -61,13 +65,12 @@ message ParquetOptions {
 message TableSpec {
     string namespace = 1;
     string name = 2;
+
     protocol.JournalSpec template = 3;
     int32 partition_limit = 4;
 }
 
 message TableFieldSpec {
-    string name = 8;
-
     bool partitioned = 1;
     bool group = 2;
     MergeOptions merge = 3;

@@ -4,14 +4,58 @@ package foo.bar;
 
 import "table/ddl/ddl.proto";
 import "gogoproto/gogo.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 
-option go_package = "go.gazette.dev/core/table/foobar";
+option go_package = "main";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.protosizer_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
-message AccessLog {
+
+message GithubEvent {
+	int64  id = 1;
+	string type = 2 [(gazette.table.field).partitioned = true];
+
+	message Actor {
+		int64  id = 1;
+		string login = 2;
+	}
+	Actor actor = 3;
+	Actor org = 4;
+
+	message Repo {
+		int64 id = 1;
+		string name = 2;
+	}
+	Repo repo = 5;
+
+	google.protobuf.Struct payload = 6;
+	google.protobuf.Timestamp created_at = 7;
+
+	gazette.table.Record record = 86753;
+
+	option (gazette.table.spec) = {
+		template: {
+			replication: 1,
+			labels: {
+				labels: {name: "content-type", value: "application/x-ndjson"},
+			},
+			fragment: {
+				length: 268435456,
+				compression_codec: GZIP,
+				stores: ["file:///"],
+				refresh_interval: {seconds: 300},
+				path_postfix_template: "date={{ .Spool.FirstAppendTime.Format \"2006-01-02\" }}",
+			},
+		}
+		partition_limit: 50,
+	};
+}
+
+
+/*
 
     string client_ip = 2 [(gazette.table.field).parquet.bloom_filter = true];
     string host = 3 [(gazette.table.field).partitioned = true];
@@ -29,7 +73,7 @@ message AccessLog {
 
     option (gazette.table.spec) = {
         template: {
-            replication: 1,
+            replication: 2,
             labels: {
                 labels: {name: "a-name", value: "a-value"},
                 labels: {name: "other-name", value: "other-value"},
@@ -46,6 +90,7 @@ message AccessLog {
         partition_limit: 50,
     };
 };
+*/
 
 /*
 message CampaignFacts {

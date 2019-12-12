@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/gogo/protobuf/gogoproto"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/protoc-gen-gogo/descriptor"
 	"github.com/gogo/protobuf/protoc-gen-gogo/generator"
@@ -19,16 +20,31 @@ import (
 )
 
 var tpl = template.Must(template.New("file").Funcs(template.FuncMap{
-	"base": path.Base,
+	"Base":       path.Base,
+	"IsNullable": gogoproto.IsNullable,
+	"GoField": func(c FieldContext) string {
+		if gogoproto.IsEmbed(c.Desc) {
+			return (*c.Desc.TypeName)[strings.LastIndexByte(*c.Desc.TypeName, '.')+1:]
+		} else {
+			return generator.CamelCase(*c.Desc.Name)
+		}
+	},
 }).Parse(`
-package {{ base .Options.GoPackage }};
+package {{ Base .Options.GoPackage }};
 
 import (
 	"strconv"
 
 	"go.gazette.dev/core/table/ddl"
 	"go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/message"
 )
+
+var _ = strconv.Atoi
+
+{{ if eq (Base .Options.GoPackage) "main" }}
+func main() {}
+{{ end }}
 
 {{ range $tbl := .Tables }}
 func (m *{{ $tbl.Name }}) TableSpec() ddl.TableSpec {
@@ -40,17 +56,45 @@ func (m *{{ $tbl.Name }}) TableSpec() ddl.TableSpec {
 	}
 }
 
+// TODO(johnny): use envoy validator
+func (m *{{ $tbl.Name }}) Validate() error { return nil }
+
+func (m *{{ $tbl.Name }}) NewAcknowledgement(protocol.Journal) message.Message {
+	return new({{ $tbl.Name }})
+}
+{{ range $fld := $tbl.Fields }}
+{{- if not $fld.Desc.IsMessage }} 
+{{- else if eq (printf $fld.Desc.TypeName) ".gazette.table.Record" }}
+func (m *{{ $tbl.Name }}) GetUUID() (uuid message.UUID) {
+	copy(uuid[:], m.{{ GoField $fld }}.GetUuid())
+	return
+}
+func (m *{{ $tbl.Name }}) SetUUID(uuid message.UUID) {
+	{{- if IsNullable $fld.Desc }}
+	if m.{{ GoField $fld }} == nil {
+		m.{{ GoField $fld }} = new(ddl.Record)
+	}
+	{{- end }}
+	m.{{ GoField $fld }}.Uuid = uuid[:]
+}
+{{- end -}}
+{{ end }}
+
 func (m *{{ $tbl.Name }}) VisitPartitionFields(cb func(field, value string)) {
 {{ range $fld := $tbl.Fields }}
 {{- if not $fld.Partitioned }}
 {{- else if $fld.Desc.IsBool }}
-	if m.{{ $fld.Name }} { cb("{{ $fld.Desc.Name }}", "1") } else { cb("{{ $fld.Desc.Name }}", "0") }
+	if m.{{ GoField $fld }} {
+		cb("{{ $fld.Desc.Name }}", "1")
+	} else {
+		cb("{{ $fld.Desc.Name }}", "0")
+	}
 {{- else if $fld.Desc.IsString }}
-	cb("{{ $fld.Desc.Name }}", m.{{ $fld.Name }})
+	cb("{{ $fld.Desc.Name }}", m.{{ GoField $fld }})
 {{- else if $fld.Desc.IsEnum }}
-	cb("{{ $fld.Desc.Name }}", m.{{ $fld.Name }}.String())
+	cb("{{ $fld.Desc.Name }}", m.{{ GoField $fld }}.String())
 {{- else }}
-	cb("{{ $fld.Desc.Name }}", strconv.FormatInt(int64(m.{{ $fld.Name }}), 10))
+	cb("{{ $fld.Desc.Name }}", strconv.FormatInt(int64(m.{{ GoField $fld }}), 10))
 {{- end -}}
 {{ end }}
 }
@@ -106,7 +150,6 @@ func (c TableContext) Fields() ([]FieldContext, error) {
 				spec = *v.(*ddl.TableFieldSpec)
 			}
 		}
-		spec.Name = generator.CamelCase(*fld.Name)
 
 		if spec.Partitioned {
 			if fld.IsRepeated() {

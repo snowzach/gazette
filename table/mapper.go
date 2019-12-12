@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/labels"
@@ -21,6 +22,15 @@ type Mapper struct {
 	pollInterval time.Duration
 	lists        map[string]*client.PolledList
 	mu           sync.Mutex
+}
+
+func NewMapper(ctx context.Context, rjc pb.RoutedJournalClient, pollInterval time.Duration) *Mapper {
+	return &Mapper{
+		ctx:          ctx,
+		client:       rjc,
+		pollInterval: pollInterval,
+		lists:        make(map[string]*client.PolledList),
+	}
 }
 
 func (m *Mapper) Map(mappable message.Mappable) (_ pb.Journal, contentType string, _ error) {
@@ -47,6 +57,8 @@ func (m *Mapper) mapRowToJournals(row Row) ([]pb.ListResponse_Journal, error) {
 	m.mu.Lock()
 	var list, ok = m.lists[string(b.Bytes())]
 	if !ok {
+		log.WithField("table", b.String()).Info("mapper is starting new PolledList")
+
 		list = client.NewPolledList(m.ctx, m.client, m.pollInterval, pb.ListRequest{
 			Selector: pb.LabelSelector{Include: pb.MustLabelSet("prefix", b.String()+"/")},
 		})
@@ -95,10 +107,12 @@ func (m *Mapper) mapRowToJournals(row Row) ([]pb.ListResponse_Journal, error) {
 		row.VisitPartitionFields(func(field, value string) {
 			labels.AddValue("table.gazette.dev/field/"+field, value)
 		})
-		var spec = pb.UnionJournalSpecs(*tbl.Template, pb.JournalSpec{
+		var spec = pb.UnionJournalSpecs(pb.JournalSpec{
 			Name:     pb.Journal(b.String() + "/part=000"),
 			LabelSet: labels,
-		})
+		}, *tbl.Template)
+
+		log.WithField("spec", spec).Info("applying new journal spec")
 
 		resp, err := client.ApplyJournals(m.ctx, m.client, &pb.ApplyRequest{
 			Changes: []pb.ApplyRequest_Change{
