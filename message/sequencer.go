@@ -94,8 +94,8 @@ func (w *Sequencer) QueueUncommitted(env Envelope) {
 			Journal:  env.Journal.Name,
 			Producer: GetProducerID(uuid),
 		}
-		clock       = GetClock(env.GetUUID())
-		flags       = GetFlags(env.GetUUID())
+		clock       = GetClock(uuid)
+		flags       = GetFlags(uuid)
 		partial, ok = w.partials[jp]
 	)
 	if !ok {
