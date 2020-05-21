@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind:       Deployment
+kind: Deployment
 metadata:
   name: consumer
   labels:
@@ -15,13 +15,13 @@ spec:
         app.kubernetes.io/name: patch-with-name
     spec:
       containers:
-        - name:            consumer
-          image:           consumer/image
+        - name: consumer
+          image: consumer/image
           imagePullPolicy: Always
           ports:
-            - name:          http
+            - name: http
               containerPort: 8080
-              protocol:      TCP
+              protocol: TCP
           readinessProbe:
             httpGet:
               path: /debug/ready
@@ -38,14 +38,14 @@ spec:
           env:
             # Broker service endpoint to use.
             # By default, assume a "gazette" service running in our same namespace.
-            - name:  BROKER_ADDRESS
+            - name: BROKER_ADDRESS
               value: "http://gazette:8080"
             # Size of the journal route cache to use. This reduces network hops by
             # directing RPCs directly to a responsible broker for a given journal.
-            - name:  BROKER_CACHE_SIZE
+            - name: BROKER_CACHE_SIZE
               value: "256"
             # Additional arguments may optionally be patched in.
-            - name:  CONSUMER_APP_ARGS
+            - name: CONSUMER_APP_ARGS
               value: ""
             # Consumer binary, which defaults to the well-known name label.
             - name: CONSUMER_APP_BINARY
@@ -64,7 +64,7 @@ spec:
                   fieldPath: metadata.name
             # Etcd service endpoint to use for consumer coordination.
             # By default, assume an "etcd" service running in our same namespace.
-            - name:  ETCD_ADDRESS
+            - name: ETCD_ADDRESS
               value: "http://etcd:2379"
             # Compose an ETCD_PREFIX by combining the well-known name and instance labels.
             - name: ETCD_PREFIX_APP_INSTANCE
@@ -75,12 +75,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.labels['app.kubernetes.io/name']
-            - name:  ETCD_PREFIX
+            - name: ETCD_PREFIX
               value: "/gazette/consumers/$(ETCD_PREFIX_APP_NAME)-$(ETCD_PREFIX_APP_INSTANCE)"
             # Logging configuration.
-            - name:  LOG_FORMAT
+            - name: LOG_FORMAT
               value: "json"
-            - name:  LOG_LEVEL
+            - name: LOG_LEVEL
               value: "info"
             # Node hostname, used to map to a failure zone.
             - name: NODE_NAME
@@ -89,11 +89,15 @@ spec:
                   fieldPath: spec.nodeName
 
           volumeMounts:
-            - name:      tmpdir
+            - name: tmpdir
               mountPath: /tmp
-            - name:      zonemap
-              readOnly:  true
+            - name: zonemap
+              readOnly: true
               mountPath: /home/gazette/.config/zonemap
+
+          # No resource requests or limits are specified by default,
+          # to allow consumers to run in micro kubernetes environments.
+          resources: {}
 
       volumes:
         # tmpdir is used for all ephemeral and temporary files, such as shard stores.
@@ -116,10 +120,10 @@ spec:
           configMap:
             name: gazette-zonemap
             items:
-              - key:  node-zone.sh
+              - key: node-zone.sh
                 path: node-zone.sh
                 mode: 0777
 
       # Give pods plenty of time to shutdown gracefully after SIGTERM.
       terminationGracePeriodSeconds: 21600
-      automountServiceAccountToken:  false
+      automountServiceAccountToken: false

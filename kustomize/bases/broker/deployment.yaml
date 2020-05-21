@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind:       Deployment
+kind: Deployment
 metadata:
   name: gazette
   labels:
@@ -15,21 +15,21 @@ spec:
         app.kubernetes.io/name: gazette
     spec:
       containers:
-        - name:            gazette
-          image:           gazette/broker
+        - name: gazette
+          image: gazette/broker
           imagePullPolicy: Always
           ports:
-            - name:          http
+            - name: http
               containerPort: 8080
-              protocol:      TCP
+              protocol: TCP
           readinessProbe:
             httpGet:
               path: /debug/ready
               port: http
           command:
             # Run within a shell to allow for interpretation of values.
-            - "/bin/sh"
-            - "-ec"
+            - /bin/sh
+            - -ec
             - |
               exec gazette serve \
                 --broker.port  8080 \
@@ -47,19 +47,19 @@ spec:
                   fieldPath: metadata.name
             # Etcd service endpoint to use for broker coordination.
             # By default, assume an "etcd" service running in our same namespace.
-            - name:  ETCD_ADDRESS
+            - name: ETCD_ADDRESS
               value: "http://etcd:2379"
             # Compose an ETCD_PREFIX by composing with the well-known instance label.
             - name: ETCD_PREFIX_APP_INSTANCE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.labels['app.kubernetes.io/instance']
-            - name:  ETCD_PREFIX
+            - name: ETCD_PREFIX
               value: "/gazette/cluster/$(ETCD_PREFIX_APP_INSTANCE)"
             # Logging configuration.
-            - name:  LOG_FORMAT
+            - name: LOG_FORMAT
               value: "json"
-            - name:  LOG_LEVEL
+            - name: LOG_LEVEL
               value: "info"
             # Node hostname, used to map to a failure zone.
             - name: NODE_NAME
@@ -67,26 +67,34 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
             # Ask the AWS SDK to load ~/.aws/config by default, alongside ~/.aws/credentials.
-            - name:  AWS_SDK_LOAD_CONFIG
+            - name: AWS_SDK_LOAD_CONFIG
               value: "1"
             # Direct the Google SDK to the well-known location for application default
             # credentials. This ENV variable isn't required, as this is the default,
             # but is provided for completeness.
-            - name:  GOOGLE_APPLICATION_CREDENTIALS
+            - name: GOOGLE_APPLICATION_CREDENTIALS
               value: /home/gazette/.config/gcloud/application_default_credentials.json
 
           volumeMounts:
-            - name:      tmpdir
+            - name: tmpdir
               mountPath: /tmp
-            - name:      zonemap
-              readOnly:  true
+            - name: zonemap
+              readOnly: true
               mountPath: /home/gazette/.config/zonemap
-            - name:      gce-credentials
-              readOnly:  true
+            - name: gce-credentials
+              readOnly: true
               mountPath: /home/gazette/.config/gcloud
-            - name:      aws-credentials
-              readOnly:  true
+            - name: aws-credentials
+              readOnly: true
               mountPath: /home/gazette/.aws
+
+          # No resource requests or limits are specified by default,
+          # to allow brokers to run in micro kubernetes environments.
+          # A reasonable production allocation would be 4-8 cores,
+          # and at least 12Gi of memory. While brokers themselves use
+          # relatively little memory, they make heavy use of the Linux
+          # page cache, which accrues against the pod's budget.
+          resources: {}
 
       volumes:
         # tmpdir is used for all ephemeral and temporary files, such as journal spools.
@@ -109,7 +117,7 @@ spec:
           configMap:
             name: gazette-zonemap
             items:
-              - key:  node-zone.sh
+              - key: node-zone.sh
                 path: node-zone.sh
                 mode: 0777
 
@@ -119,9 +127,9 @@ spec:
         - name: gce-credentials
           secret:
             secretName: gazette-gce-credentials
-            optional:   true
+            optional: true
             items:
-              - key:  service-account.json
+              - key: service-account.json
                 path: application_default_credentials.json # Well-known name of default credentials.
 
         # Mount optional Secret "gazette-aws-credentials", which should contain
@@ -130,8 +138,8 @@ spec:
         - name: aws-credentials
           secret:
             secretName: gazette-aws-credentials
-            optional:   true
+            optional: true
 
       # Give pods plenty of time to shutdown gracefully after SIGTERM.
       terminationGracePeriodSeconds: 21600
-      automountServiceAccountToken:  false
+      automountServiceAccountToken: false
