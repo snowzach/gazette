@@ -1,5 +1,6 @@
 #!/bin/sh -ex
 
+readonly HOSTNAME="${HOSTNAME?HOSTNAME is required}"
 readonly ETCD_SERVICE_NAME="${ETCD_SERVICE_NAME?ETCD_SERVICE_NAME is required}"
 readonly MIN_REPLICAS="${MIN_REPLICAS?MIN_REPLICAS is required}"
 readonly AUTH_FLAGS="${AUTH_FLAGS?AUTH_FLAGS is required}"
@@ -24,7 +25,7 @@ seed_peers() {
 
 # Select the member hash ID of this host from amoung the current member list.
 member_hash() {
-  etcdctl ${AUTH_FLAGS} member list | grep "http://$(hostname).${ETCD_SERVICE_NAME}:2380" | cut -d',' -f1
+  etcdctl ${AUTH_FLAGS} member list | grep "http://${HOSTNAME}.${ETCD_SERVICE_NAME}:2380" | cut -d',' -f1
 }
 
 # Persist member hash ID into the persistent volume for future member restart.
@@ -34,6 +35,6 @@ persist_member_hash() {
 }
 
 member_index() {
-  readonly h=$(hostname)
+  readonly h=${HOSTNAME}
   echo ${h##*[^0-9]}
 }
