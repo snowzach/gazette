@@ -43,15 +43,18 @@ Help Options:
 
     Consumer:
           --consumer.address=        Service address endpoint (default: http://localhost:8080) [$CONSUMER_ADDRESS]
-          --consumer.cache.size=     Size of client route cache. If <= zero, no cache is used (server always proxies) (default: 0) [$CONSUMER_CACHE_SIZE]
+          --consumer.cache.size=     Size of client route cache. If <= zero, no cache is used (server always proxies) (default: 0)
+                                     [$CONSUMER_CACHE_SIZE]
           --consumer.cache.ttl=      Time-to-live of route cache entries. (default: 1m) [$CONSUMER_CACHE_TTL]
 
     Broker:
           --broker.address=          Service address endpoint (default: http://localhost:8080) [$BROKER_ADDRESS]
-          --broker.cache.size=       Size of client route cache. If <= zero, no cache is used (server always proxies) (default: 0) [$BROKER_CACHE_SIZE]
+          --broker.cache.size=       Size of client route cache. If <= zero, no cache is used (server always proxies) (default: 0)
+                                     [$BROKER_CACHE_SIZE]
           --broker.cache.ttl=        Time-to-live of route cache entries. (default: 1m) [$BROKER_CACHE_TTL]
 
 [edit command options]
       -l, --selector=                Label Selector query to filter on
-          --max-txn-size=            maximum number of specs to be processed within an apply transaction. If 0, the default, all changes are issued in a single transaction (default: 0)
+          --max-txn-size=            maximum number of specs to be processed within an apply transaction. If 0, the default, all
+                                     changes are issued in a single transaction (default: 0)
 

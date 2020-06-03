@@ -1,14 +1,12 @@
 Usage:
-  gazctl [OPTIONS] shards [shards-OPTIONS] prune [prune-OPTIONS]
+  gazctl [OPTIONS] shards [shards-OPTIONS] recover [recover-OPTIONS]
 
-Recovery logs capture every write which has ever occurred in a Shard DB.
-This includes all prior writes of client keys & values, and also RocksDB
-compactions, which can significantly inflate the total volume of writes
-relative to the data currently represented in a RocksDB.
+Recover shard databases to the local disk, from their recovery logs.
 
-Prune log examines the provided hints to identify Fragments of the log
-which have no intersection with any live files of the DB, and can thus
-be safely deleted.
+Use --selector to supply a LabelSelector which determines the set of shards
+to recover. See gazctl shards list for further details on usage.
+
+As an alternative, use --fsm-hints to provide specific JSON-encoded FSM hints to recover.
 
 
 Application Options:
@@ -35,7 +33,7 @@ Help Options:
                                      [$BROKER_CACHE_SIZE]
           --broker.cache.ttl=        Time-to-live of route cache entries. (default: 1m) [$BROKER_CACHE_TTL]
 
-[prune command options]
+[recover command options]
       -l, --selector=                Label Selector query to filter on
-          --dry-run                  Perform a dry-run of the apply
+          --fsm-hints=               Path to JSON-encoded FSM hints to recover
 

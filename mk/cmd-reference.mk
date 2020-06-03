@@ -16,7 +16,8 @@ cmd-reference-targets = \
 	docs/_static/cmd-gazctl-shards-apply.txt \
 	docs/_static/cmd-gazctl-shards-edit.txt \
 	docs/_static/cmd-gazctl-shards-list.txt \
-	docs/_static/cmd-gazctl-shards-prune.txt
+	docs/_static/cmd-gazctl-shards-prune.txt \
+	docs/_static/cmd-gazctl-shards-recover.txt
 
 cmd-reference: ${cmd-reference-targets}
 
@@ -56,5 +57,7 @@ docs/_static/cmd-gazctl-shards-list.txt: go-install
 	gazctl shards list --help > $@ || true
 docs/_static/cmd-gazctl-shards-prune.txt: go-install
 	gazctl shards prune --help > $@ || true
+docs/_static/cmd-gazctl-shards-recover.txt: go-install
+	gazctl shards recover --help > $@ || true
 
 .PHONY: cmd-reference

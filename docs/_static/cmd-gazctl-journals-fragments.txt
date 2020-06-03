@@ -48,7 +48,8 @@ gazctl journals fragments -l name=my/journal --url-ttl 1m --from $(date -d "1 ho
 
 # List fragments of journals matching my-label which were persisted between 3:00AM
 # and 4:05AM today with accompanying signed URL, output as JSON.
-gazctl journals fragments -l my-label --format json --url-ttl 1h --from $(date -d 3AM '+%s') --to $(date -d 4:05AM '+%s') --format json
+gazctl journals fragments -l my-label --format json --url-ttl 1h --from $(date -d 3AM '+%s') --to $(date -d 4:05AM '+%s') --format
+json
 
 
 Application Options:
@@ -65,7 +66,8 @@ Help Options:
 
     Broker:
           --broker.address=           Service address endpoint (default: http://localhost:8080) [$BROKER_ADDRESS]
-          --broker.cache.size=        Size of client route cache. If <= zero, no cache is used (server always proxies) (default: 0) [$BROKER_CACHE_SIZE]
+          --broker.cache.size=        Size of client route cache. If <= zero, no cache is used (server always proxies) (default: 0)
+                                      [$BROKER_CACHE_SIZE]
           --broker.cache.ttl=         Time-to-live of route cache entries. (default: 1m) [$BROKER_CACHE_TTL]
 
 [fragments command options]

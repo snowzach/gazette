@@ -38,7 +38,8 @@ Help Options:
 
     Broker:
           --broker.address=                Service address endpoint (default: http://localhost:8080) [$BROKER_ADDRESS]
-          --broker.cache.size=             Size of client route cache. If <= zero, no cache is used (server always proxies) (default: 0) [$BROKER_CACHE_SIZE]
+          --broker.cache.size=             Size of client route cache. If <= zero, no cache is used (server always proxies)
+                                           (default: 0) [$BROKER_CACHE_SIZE]
           --broker.cache.ttl=              Time-to-live of route cache entries. (default: 1m) [$BROKER_CACHE_TTL]
 
 [list command options]
