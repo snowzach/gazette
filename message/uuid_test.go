@@ -25,6 +25,7 @@ func TestUUIDClock(t *testing.T) {
 	require.Equal(t, clock.Tick(), Clock(2))
 
 	clock.Update(time.Unix(12, 300))
+	require.Equal(t, time.Unix(12, 300), clock.Time())
 
 	// Clock representation is precise to 100ns.
 	require.Equal(t, clock, NewClock(time.Unix(12, 399)))
@@ -54,6 +55,9 @@ func TestUUIDClock(t *testing.T) {
 	clock.Tick()
 	clock.Update(time.Unix(12, 400))
 	require.True(t, clock > NewClock(time.Unix(12, 400)))
+
+	// However converting to Time is lossy, and drops sequence bits.
+	require.Equal(t, time.Unix(12, 400), clock.Time())
 
 	// Sequence bits are reset if the clock timestamp is updated.
 	clock.Update(time.Unix(12, 500))
