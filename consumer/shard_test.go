@@ -29,7 +29,7 @@ func TestReadMessages(t *testing.T) {
 	<-aa.Done()
 	shard.Spec().Sources[0].MinOffset = aa.Response().Commit.End
 
-	var ch = make(chan readMessage, 12)
+	var ch = make(chan EnvelopeOrError, 12)
 	startReadingMessages(shard, cp, ch)
 
 	_, _ = tf.pub.PublishCommitted(toSourceA, &testMessage{Key: "one"})
@@ -45,7 +45,7 @@ func TestReadMessagesFailsWithUnknownJournal(t *testing.T) {
 	var _, shard, cleanup = newTestFixtureWithIdleShard(t)
 	defer cleanup()
 
-	var ch = make(chan readMessage, 12)
+	var ch = make(chan EnvelopeOrError, 12)
 	shard.resolved.spec.Sources[1].Journal = "yyy/zzz"
 
 	// Error is detected on first attempt at reading a message.
@@ -58,7 +58,7 @@ func TestReadMessagesFailsWithBadFraming(t *testing.T) {
 	var _, shard, cleanup = newTestFixtureWithIdleShard(t)
 	defer cleanup()
 
-	var ch = make(chan readMessage, 12)
+	var ch = make(chan EnvelopeOrError, 12)
 	shard.resolved.spec.Sources[1].Journal = shard.Spec().RecoveryLog()
 
 	// Error is detected on first attempt at reading a message.
