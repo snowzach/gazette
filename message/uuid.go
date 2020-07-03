@@ -88,6 +88,14 @@ func (c *Clock) Tick() Clock {
 	return Clock(atomic.AddUint64((*uint64)(c), 1))
 }
 
+// Time returns the Clock value as a time.Time.
+// This conversion is lossy (it drops the 4-bit sequence counter).
+func (c *Clock) Time() time.Time {
+	var val = atomic.LoadUint64((*uint64)(c))
+	var ns = ((val >> 4) - g1582ns100) * 100
+	return time.Unix(0, int64(ns))
+}
+
 // GetClock returns the clock timestamp and sequence as a Clock.
 func GetClock(uuid UUID) Clock {
 	var t = uint64(binary.BigEndian.Uint32(uuid[0:4])) << 4    // Clock low bits.
