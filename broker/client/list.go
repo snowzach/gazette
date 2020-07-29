@@ -22,11 +22,12 @@ import (
 //      })
 //
 type PolledList struct {
-	ctx      context.Context
-	client   pb.JournalClient
-	req      pb.ListRequest
-	resp     atomic.Value
-	updateCh chan struct{}
+	ctx       context.Context
+	client    pb.JournalClient
+	req       pb.ListRequest
+	resp      atomic.Value
+	updateCh  chan struct{}
+	requestCh chan pb.ListRequest
 }
 
 // NewPolledList returns a PolledList of the ListRequest which is initialized and
@@ -39,10 +40,11 @@ func NewPolledList(ctx context.Context, client pb.JournalClient, dur time.Durati
 		return nil, err
 	}
 	var pl = &PolledList{
-		ctx:      ctx,
-		client:   client,
-		req:      req,
-		updateCh: make(chan struct{}, 1),
+		ctx:       ctx,
+		client:    client,
+		req:       req,
+		updateCh:  make(chan struct{}, 1),
+		requestCh: make(chan pb.ListRequest, 1),
 	}
 	pl.resp.Store(resp)
 	pl.updateCh <- struct{}{}
@@ -59,11 +61,30 @@ func (pl *PolledList) List() *pb.ListResponse { return pl.resp.Load().(*pb.ListR
 // so if multiple goroutines select from UpdateCh only one will wake.
 func (pl *PolledList) UpdateCh() <-chan struct{} { return pl.updateCh }
 
+// UpdateRequest updates the request used by this PolledList.
+func (pl *PolledList) UpdateRequest(req pb.ListRequest) {
+	for {
+		select {
+		case pl.requestCh <- req:
+			return
+		case <-pl.requestCh:
+			// Drain a previous but unapplied update.
+		}
+	}
+}
+
 func (pl *PolledList) periodicRefresh(dur time.Duration) {
 	var ticker = time.NewTicker(dur)
 	for {
 		select {
 		case <-ticker.C:
+			// Dequeue and apply a request update.
+			select {
+			case req := <-pl.requestCh:
+				pl.req = req
+			default:
+			}
+
 			var resp, err = ListAllJournals(pl.ctx, pl.client, pl.req)
 			if err != nil {
 				log.WithFields(log.Fields{"err": err, "req": pl.req.String()}).
