@@ -32,15 +32,21 @@ be safely deleted.
 
 func (cmd *cmdShardsPrune) Execute([]string) error {
 	startup()
-	var ctx = context.Background()
 
+	var ctx = context.Background()
 	var m = shardsPruneMetrics{}
+	var logSegmentSets = make(map[pb.Journal]recoverylog.SegmentSet)
+
 	for _, shard := range listShards(cmd.Selector).Shards {
 		m.shardsTotal++
 		var lastHints = fetchLastHints(ctx, shard.Spec.Id)
+
+		// We require that we see hints for _all_ shards before we may make _any_ deletions.
+		// This is because shards could technically include segments from any log,
+		// and without comprehensive hints which are proof-positive that _no_ shard
+		// references a given journal fragment, we cannot be sure it's safe to remove.
 		if lastHints == nil {
-			log.Infof("skipping shard %s, there are no backup hints for this shard", shard.Spec.Id)
-			continue
+			log.Panicf("shard %s is missing backup hints", shard.Spec.Id)
 		}
 
 		var _, segments, err = lastHints.LiveLogSegments()
@@ -48,24 +54,46 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 			mbp.Must(err, "unable to fetch hint segments")
 		}
 
-		if len(segments) == 0 {
-			log.Infof("skipping shard %s, there are no segments for this shard", shard.Spec.Id)
-			continue
-		}
-
 		// Zero the LastOffset of the final hinted Segment. This has the effect of implicitly
 		// intersecting with all fragments having offsets greater than its FirstOffset.
 		// We want this behavior because playback will continue to read offsets & Fragments
 		// after reading past the final hinted Segment.
-		segments[len(segments)-1].LastOffset = 0
+		if len(segments) != 0 {
+			segments[len(segments)-1].LastOffset = 0
+		}
 
-		for _, f := range fetchFragments(ctx, lastHints.Log) {
+		for _, segment := range segments {
+			var set = logSegmentSets[segment.Log]
+
+			// set.Add() will return an error if we attempt to add a segment having a
+			// greater SeqNo and LastOffset != 0, to a set already having a lesser
+			// SeqNo and LastOffset == 0. Or, if FirstSeqNo is equal, it will replace
+			// a zero LastOffset with a non-zero one (which is not what we want
+			// in this case).
+			//
+			// So, zero LastOffset here if |segment| isn't strictly less than
+			// and non-overlapping with the last set element.
+			//
+			// Conceptually, we've defined a "tail" of the log where we won't delete
+			// anything, and are letting the /oldest/ hints bound how early that tail
+			// portion begins.
+			if l := len(set); l != 0 && set[l].FirstSeqNo <= segment.LastSeqNo {
+				segment.LastOffset = 0
+			}
+
+			mbp.Must(set.Add(segment), "failed to add segment", "log", segment.Log)
+			logSegmentSets[segment.Log] = set
+		}
+	}
+
+	for journal, segments := range logSegmentSets {
+		for _, f := range fetchFragments(ctx, journal) {
 			var spec = f.Spec
 
 			m.fragmentsTotal++
 			m.bytesTotal += spec.ContentLength()
 
-			if len(segments.Intersect(spec.Begin, spec.End)) == 0 {
+			if len(segments.Intersect(journal, spec.Begin, spec.End)) == 0 {
 				log.WithFields(log.Fields{
 					"log":  spec.Journal,
 					"name": spec.ContentName(),
@@ -77,17 +105,13 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 				m.bytesPruned += spec.ContentLength()
 
 				if !cmd.DryRun {
-					err = fragment.Remove(ctx, spec)
-					if err != nil {
-						mbp.Must(err, "error removing fragment", "path", spec.ContentPath())
-					}
-
+					mbp.Must(fragment.Remove(ctx, spec), "error removing fragment", "path", spec.ContentPath())
 				}
 			}
 		}
-		logShardsPruneMetrics(m, shard.Spec.Id.String(), "finished pruning log for shard")
+		logShardsPruneMetrics(m, journal.String(), "finished pruning log")
 	}
-	logShardsPruneMetrics(m, "", "finished pruning log for all shards")
+	logShardsPruneMetrics(m, "", "finished pruning logs for all shards")
 	return nil
 }
 
@@ -132,7 +156,7 @@ type shardsPruneMetrics struct {
 	bytesPruned     int64
 }
 
-func logShardsPruneMetrics(m shardsPruneMetrics, shard, message string) {
+func logShardsPruneMetrics(m shardsPruneMetrics, journal, message string) {
 	var fields = log.Fields{
 		"shardsTotal":     m.shardsTotal,
 		"fragmentsTotal":  m.fragmentsTotal,
@@ -142,8 +166,8 @@ func logShardsPruneMetrics(m shardsPruneMetrics, shard, message string) {
 		"bytesPruned":     m.bytesPruned,
 		"bytesKept":       m.bytesTotal - m.bytesPruned,
 	}
-	if shard != "" {
-		fields["shard"] = shard
+	if journal != "" {
+		fields["journal"] = journal
 	}
 	log.WithFields(fields).Info(message)
 }
