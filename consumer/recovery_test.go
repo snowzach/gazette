@@ -115,9 +115,9 @@ func TestRecoveryFailsFromMissingLog(t *testing.T) {
 	var _, shard, cleanup = newTestFixtureWithIdleShard(t)
 	defer cleanup()
 
-	shard.resolved.spec.RecoveryLogPrefix = "does/not/exist"
-	require.EqualError(t, beginRecovery(shard), "fetching log spec: named journal does"+
-		" not exist (does/not/exist/"+shardA+")")
+	shard.recovery.log = "does/not/exist"
+	require.EqualError(t, beginRecovery(shard), "fetching log spec: "+
+		"named journal does not exist (does/not/exist)")
 }
 
 func TestRecoveryFailsFromWrongContentType(t *testing.T) {

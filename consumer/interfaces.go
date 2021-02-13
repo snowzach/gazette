@@ -283,6 +283,15 @@ type MessageProducer interface {
 	ReadThrough(Shard, Store, ResolveArgs) (pb.Offsets, error)
 }
 
+// BeginRecoverer is an optional interface of Application which is notified
+// that a consumer shard is about to begin playback from a recovery log.
+// The returned ShardID must be a valid Shard having a recovery log, but it need
+// not be the _same_ shard as Shard.Spec().Id -- another Shard ID might be returned,
+// for example, to initialize this shard from the state of another.
+type BeginRecoverer interface {
+	BeginRecovery(Shard) (pc.ShardID, error)
+}
+
 var (
 	shardTxnTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "gazette_shard_transactions_total",
