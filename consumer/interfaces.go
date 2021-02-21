@@ -283,6 +283,12 @@ type MessageProducer interface {
 	ReadThrough(Shard, Store, ResolveArgs) (pb.Offsets, error)
 }
 
+// TODO(johnny): This should be rolled back before merging into Gazette proper.
+// Instead, beginRecover() should use GetHints off of the shard's Service,
+// which the application can wire up with alternative strategies for selecting
+// hints. It can also create recovery logs, though a _better_ strategy is to
+// have the ShardApply hook do it at apply time!
+//
 // BeginRecoverer is an optional interface of Application which is notified
 // that a consumer shard is about to begin playback from a recovery log.
 // The returned ShardID must be a valid Shard having a recovery log, but it need
