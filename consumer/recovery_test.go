@@ -39,8 +39,6 @@ func TestStoreAndFetchHints(t *testing.T) {
 		require.Equal(t, shard.Spec().RecoveryLog(), hints.log)
 		require.Len(t, hints.txnResp.Responses, 3)
 		require.Len(t, hints.hints, 3)
-
-		require.Equal(t, mkHints(firstID), pickFirstHints(hints))
 		require.Len(t, hints.hints, len(ids))
 
 		for i, hint := range hints.hints {
@@ -80,7 +78,8 @@ func TestStoreAndFetchHints(t *testing.T) {
 	// When no hints exist, default hints are returned.
 	h, err := fetchHints(ctx, shard.Spec(), tf.etcd)
 	require.NoError(t, err)
-	require.Equal(t, recoverylog.FSMHints{Log: shard.Spec().RecoveryLog()}, pickFirstHints(h))
+	require.Equal(t, shard.Spec().RecoveryLog(), h.log)
+	require.Equal(t, []*recoverylog.FSMHints{nil, nil, nil}, h.hints)
 }
 
 func TestRecoveryFromEmptyLog(t *testing.T) {
@@ -108,7 +107,7 @@ func TestRecoveryFailsFromInvalidHints(t *testing.T) {
 	defer cleanup()
 
 	_, _ = tf.etcd.Put(context.Background(), shard.Spec().HintPrimaryKey(), "invalid hints")
-	require.EqualError(t, beginRecovery(shard), "fetchHints: hints.Unmarshal: unexpected EOF")
+	require.EqualError(t, beginRecovery(shard), "GetHints: hints.Unmarshal: unexpected EOF")
 }
 
 func TestRecoveryFailsFromMissingLog(t *testing.T) {

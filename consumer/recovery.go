@@ -12,7 +12,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"go.etcd.io/etcd/client/v3"
-	"go.gazette.dev/core/allocator"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
 	pc "go.gazette.dev/core/consumer/protocol"
@@ -79,16 +78,20 @@ func fetchHints(ctx context.Context, spec *pc.ShardSpec, etcd *clientv3.Client) 
 	return
 }
 
-// pickFirstHints retrieves the first hints from |f|. If there are no primary
-// hints available the most recent backup hints will be returned. If there are
-// no hints available an empty set of hints is returned.
-func pickFirstHints(f fetchedHints) recoverylog.FSMHints {
-	for _, h := range f.hints {
-		if h != nil {
-			return *h
+// pickFirstHints retrieves the first hints from |hints|.
+// If there are no primary hints available the most recent backup hints will be returned.
+// If there are no hints available an empty set of hints is returned.
+func pickFirstHints(hints *pc.GetHintsResponse, log pb.Journal) recoverylog.FSMHints {
+	if hints.PrimaryHints.Hints != nil {
+		return *hints.PrimaryHints.Hints
+	}
+
+	for _, h := range hints.BackupHints {
+		if h.Hints != nil {
+			return *h.Hints
 		}
 	}
-	return recoverylog.FSMHints{Log: f.log}
+	return recoverylog.FSMHints{Log: log}
 }
 
 // storeRecordedHints writes FSMHints into the primary hint key of the spec.
@@ -193,42 +196,21 @@ func storeRecoveredHints(s *shard, hints recoverylog.FSMHints) error {
 
 // beginRecovery fetches FSMHints and recovers them into a temporary directory.
 func beginRecovery(s *shard) error {
-	var id = s.Spec().Id
-	var err error
+	var spec = s.Spec()
+	var allHints, err = s.svc.GetHints(s.ctx, &pc.GetHintsRequest{
+		Shard: spec.Id,
+	})
 
-	// Notify the application we're about to begin recovery, and give
-	// it an opportunity to identify another shard to recover from.
-	var hintsID = id
-	if br, ok := s.svc.App.(BeginRecoverer); ok {
-		if hintsID, err = br.BeginRecovery(s); err != nil {
-			return errors.WithMessage(err, "BeginRecovery")
-		}
+	if err == nil && allHints.Status != pc.Status_OK {
+		err = fmt.Errorf(allHints.Status.String())
 	}
-
-	// Map |hintsID| to a shard spec. Most of the time this is simply
-	// s.Spec(), but we handle the general case here.
-	s.svc.State.KS.Mu.RLock()
-	var hintsItem, hintsOK = allocator.LookupItem(s.svc.State.KS, hintsID.String())
-	s.svc.State.KS.Mu.RUnlock()
-
-	if !hintsOK {
-		return fmt.Errorf("shard %q not found", hintsID)
-	}
-
-	var hintsSpec = hintsItem.ItemValue.(*pc.ShardSpec)
-	if hintsSpec.RecoveryLog() == "" {
-		return fmt.Errorf("shard %q has no recovery log", hintsID)
-	}
-
-	// Map |hintsSpec| to its current hints.
-	allHints, err := fetchHints(s.ctx, hintsSpec, s.svc.Etcd)
 	if err != nil {
-		return errors.WithMessage(err, "fetchHints")
+		return fmt.Errorf("GetHints: %w", err)
 	}
-	var pickedHints = pickFirstHints(allHints)
+	var pickedHints = pickFirstHints(allHints, s.recovery.log)
 
-	// Verify the shard's recovery log exists, and is of the correct Content-Type.
-	if logSpec, err := client.GetJournal(s.ctx, s.ajc, s.recovery.log); err != nil {
+	// Verify the |pickedHints| recovery log exists, and is of the correct Content-Type.
+	if logSpec, err := client.GetJournal(s.ctx, s.ajc, pickedHints.Log); err != nil {
 		return errors.WithMessage(err, "fetching log spec")
 	} else if ct := logSpec.LabelSet.ValueOf(labels.ContentType); ct != labels.ContentType_RecoveryLog {
 		return errors.Errorf("expected label %s value %s (got %v)", labels.ContentType, labels.ContentType_RecoveryLog, ct)
@@ -236,14 +218,14 @@ func beginRecovery(s *shard) error {
 
 	// Create local temporary directory into which we recover.
 	var dir string
-	if dir, err = ioutil.TempDir("", strings.ReplaceAll(id.String(), "/", "_")+"-"); err != nil {
+	if dir, err = ioutil.TempDir("", strings.ReplaceAll(spec.Id.String(), "/", "_")+"-"); err != nil {
 		return errors.WithMessage(err, "creating shard working directory")
 	}
 
 	log.WithFields(log.Fields{
 		"dir": dir,
 		"log": pickedHints.Log,
-		"id":  id,
+		"id":  spec.Id,
 	}).Info("began recovering shard store from log")
 
 	// Finally, play back the log.
